@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Quordle ES · Flask</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link href="{{ url_for('static', filename='css/styles.css') }}" rel="stylesheet" />
+</head>
+
+<body>
+    <div class="page">
+        <header class="topbar">
+            <h1>Quordle</h1>
+            <div class="actions">
+                <button id="btn-new" class="btn" type="button" tabindex="-1">Nuevo juego</button>
+                <div class="attempts">
+                    <span>Intento: </span><strong id="attempt-indicator">1 / 9</strong>
+                </div>
+            </div>
+        </header>
+
+        <!-- Tableros en grilla 2x2 -->
+        <main class="boards">
+            <section class="board" data-board="0">
+                <h2>A</h2>
+                <div class="grid" data-grid="0"></div>
+            </section>
+            <section class="board" data-board="1">
+                <h2>B</h2>
+                <div class="grid" data-grid="1"></div>
+            </section>
+            <section class="board" data-board="2">
+                <h2>C</h2>
+                <div class="grid" data-grid="2"></div>
+            </section>
+            <section class="board" data-board="3">
+                <h2>D</h2>
+                <div class="grid" data-grid="3"></div>
+            </section>
+        </main>
+
+        <!-- Teclado con 4 cuadrantes por tecla -->
+        <section class="keyboard" id="keyboard"></section>
+
+        <!-- Mensajes -->
+        <div id="toast" class="toast"></div>
+        <div id="overlay" class="overlay hidden">
+            <div class="modal">
+                <h3 id="overlay-title"></h3>
+                <p id="overlay-text"></p>
+                <button id="overlay-close" class="btn">Aceptar</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+
+</html>
