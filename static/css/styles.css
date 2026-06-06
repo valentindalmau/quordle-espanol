@@ -25,14 +25,17 @@ body {
 body {
     margin: 0;
     overflow-x: hidden;
+    overscroll-behavior: none;
     background: var(--clr-bg);
     color: var(--clr-text);
     font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Helvetica, Arial, sans-serif;
+    -webkit-tap-highlight-color: transparent;
 }
 
 .page {
     width: min(100%, 1120px);
     min-height: 100vh;
+    min-height: 100dvh;
     margin: 0 auto;
     padding: 8px 12px 10px;
     display: grid;
@@ -216,6 +219,7 @@ body {
     background: var(--clr-control);
     color: var(--clr-text);
     cursor: pointer;
+    touch-action: manipulation;
     user-select: none;
 }
 
@@ -328,68 +332,159 @@ body {
 
 @media (max-width: 760px) {
     :root {
-        --tile-size: clamp(22px, 6.1vw, 31px);
+        --tile-size: min(29px, calc((100vw - 40px) / 10), calc((100dvh - 300px) / 18));
         --tile-gap: 2px;
     }
 
+    html,
+    body {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+    }
+
     .page {
-        padding: 7px;
+        width: 100%;
+        height: 100vh;
+        height: 100dvh;
+        min-height: 0;
+        padding: max(6px, env(safe-area-inset-top)) max(6px, env(safe-area-inset-right)) max(7px, env(safe-area-inset-bottom)) max(6px, env(safe-area-inset-left));
         gap: 6px;
+        overflow: hidden;
     }
 
     .topbar {
+        min-height: 42px;
         align-items: stretch;
+        gap: 6px;
     }
 
     .brand {
         flex-direction: column;
         justify-content: center;
-        gap: 3px;
+        gap: 2px;
+        flex: 1 1 72px;
     }
 
     .brand h1 {
-        font-size: 18px;
+        font-size: clamp(16px, 4.4vw, 18px);
+    }
+
+    #mode-label {
+        max-width: 96px;
+        overflow: hidden;
+        font-size: 11px;
+        text-overflow: ellipsis;
     }
 
     .actions {
+        flex: 0 1 auto;
         gap: 5px;
+        justify-content: flex-end;
+        min-width: 0;
+    }
+
+    .mode-switch {
+        align-self: center;
+        border-radius: 7px;
     }
 
     .mode-btn {
-        min-width: 58px;
-        padding: 6px 5px;
+        min-width: 0;
+        width: clamp(52px, 14.5vw, 64px);
+        padding: 7px 3px;
         font-size: 12px;
     }
 
     .btn {
-        padding: 6px 8px;
+        align-self: center;
+        min-width: 54px;
+        padding: 8px 7px;
         font-size: 12px;
     }
 
     .attempts {
-        min-width: 48px;
+        align-self: center;
+        min-width: 42px;
+        font-size: 10px;
+    }
+
+    .attempts strong {
+        font-size: 13px;
     }
 
     .boards {
+        align-self: stretch;
+        align-content: center;
         grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 6px;
+        gap: 5px;
+        min-height: 0;
+        overflow: hidden;
     }
 
     .board {
-        padding: 5px;
+        display: grid;
+        grid-template-rows: auto 1fr;
+        align-content: center;
+        padding: 4px;
     }
 
     .board h2 {
-        margin-bottom: 3px;
+        margin-bottom: 2px;
+        font-size: 10px;
+    }
+
+    .grid {
+        align-self: center;
+    }
+
+    .tile {
+        border-radius: 4px;
+        font-size: clamp(12px, calc(var(--tile-size) * .62), 17px);
+    }
+
+    .keyboard {
+        width: 100%;
+        gap: 6px;
+        padding-top: 2px;
+    }
+
+    .kb-row {
+        width: 100%;
+        gap: 4px;
+    }
+
+    .kb-row:nth-child(2) {
+        padding-inline: 10px;
     }
 
     .key {
-        width: clamp(24px, 8vw, 34px);
-        height: 42px;
+        flex: 1 1 0;
+        width: auto;
+        min-width: 0;
+        height: clamp(43px, 7.3dvh, 54px);
+        border-radius: 8px;
     }
 
     .key.wide {
-        width: clamp(48px, 14vw, 62px);
+        flex: 1.72 1 0;
+        width: auto;
+    }
+
+    .key-label {
+        top: 6px;
+        font-size: clamp(10px, 2.7vw, 12px);
+    }
+
+    .key-quarters {
+        right: 5px;
+        bottom: 6px;
+        left: 5px;
+        height: clamp(17px, 3.1dvh, 22px);
+    }
+
+    .toast {
+        bottom: calc(env(safe-area-inset-bottom) + 78px);
     }
 }
 
@@ -417,5 +512,96 @@ body {
 
     .key-quarters {
         height: 17px;
+    }
+}
+
+@media (max-width: 380px) {
+    :root {
+        --tile-size: min(27px, calc((100vw - 34px) / 10), calc((100dvh - 216px) / 18));
+    }
+
+    .page {
+        gap: 5px;
+    }
+
+    .topbar {
+        min-height: 39px;
+    }
+
+    .brand h1 {
+        font-size: 15px;
+    }
+
+    #mode-label {
+        display: none;
+    }
+
+    .mode-btn {
+        width: clamp(47px, 14vw, 56px);
+        padding-inline: 2px;
+        font-size: 11px;
+    }
+
+    .btn {
+        min-width: 48px;
+        padding-inline: 5px;
+    }
+
+    .attempts {
+        min-width: 36px;
+    }
+
+    .key {
+        height: clamp(40px, 7dvh, 48px);
+    }
+
+    .key-label {
+        font-size: 10px;
+    }
+
+    .key-quarters {
+        right: 4px;
+        left: 4px;
+    }
+}
+
+@media (max-width: 760px) and (max-height: 640px) {
+    :root {
+        --tile-size: min(24px, calc((100vw - 34px) / 10), calc((100dvh - 260px) / 18));
+    }
+
+    .topbar {
+        min-height: 36px;
+    }
+
+    .brand h1 {
+        font-size: 14px;
+    }
+
+    #mode-label,
+    .attempts span {
+        display: none;
+    }
+
+    .mode-btn,
+    .btn {
+        padding-block: 5px;
+    }
+
+    .board {
+        padding: 3px;
+    }
+
+    .key {
+        height: 38px;
+    }
+
+    .key-label {
+        top: 5px;
+    }
+
+    .key-quarters {
+        bottom: 5px;
+        height: 16px;
     }
 }
