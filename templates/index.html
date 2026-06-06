@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="utf-8" />
-    <title>Quordle ES · Flask</title>
+    <title>Quordle ES</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link href="{{ url_for('static', filename='css/styles.css') }}" rel="stylesheet" />
 </head>
@@ -11,16 +11,24 @@
 <body>
     <div class="page">
         <header class="topbar">
-            <h1>Quordle</h1>
+            <div class="brand">
+                <h1>Quordle ES</h1>
+                <span id="mode-label">Practica</span>
+            </div>
+
             <div class="actions">
-                <button id="btn-new" class="btn" type="button" tabindex="-1">Nuevo juego</button>
+                <div class="mode-switch" role="group" aria-label="Modo de juego">
+                    <button class="mode-btn active" type="button" data-mode="practice">Practica</button>
+                    <button class="mode-btn" type="button" data-mode="daily">Diario</button>
+                </div>
+                <button id="btn-new" class="btn" type="button">Nuevo</button>
                 <div class="attempts">
-                    <span>Intento: </span><strong id="attempt-indicator">1 / 9</strong>
+                    <span>Intento</span>
+                    <strong id="attempt-indicator">1 / 9</strong>
                 </div>
             </div>
         </header>
 
-        <!-- Tableros en grilla 2x2 -->
         <main class="boards">
             <section class="board" data-board="0">
                 <h2>A</h2>
@@ -40,16 +48,14 @@
             </section>
         </main>
 
-        <!-- Teclado con 4 cuadrantes por tecla -->
-        <section class="keyboard" id="keyboard"></section>
+        <section class="keyboard" id="keyboard" aria-label="Teclado"></section>
 
-        <!-- Mensajes -->
         <div id="toast" class="toast"></div>
         <div id="overlay" class="overlay hidden">
             <div class="modal">
                 <h3 id="overlay-title"></h3>
                 <p id="overlay-text"></p>
-                <button id="overlay-close" class="btn">Aceptar</button>
+                <button id="overlay-close" class="btn" type="button">Aceptar</button>
             </div>
         </div>
     </div>

@@ -1,180 +1,231 @@
-import os, random
+import hashlib
+import os
+import random
+from datetime import datetime, timezone
 from pathlib import Path
-from flask import Flask, render_template, request, jsonify, session
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-# ---------- Config ----------
+from flask import Flask, jsonify, render_template, request, session
+from flask_session import Session
+
+
 BASE_DIR = Path(__file__).resolve().parent
 WORDS_PATH = BASE_DIR / "palabras_para_quordle.txt"
+SESSION_DIR = BASE_DIR / ".flask_session"
+
 MAX_ATTEMPTS = 9
 NUM_WORDS = 4
-SECRET_KEY = os.getenv("SECRET_KEY", "cambiame-por-uno-seguro")
+WORD_LEN = 5
+MODES = {"practice", "daily"}
+SECRET_KEY = os.getenv("SECRET_KEY")
+APP_TIMEZONE = os.getenv("APP_TIMEZONE", "America/Argentina/Buenos_Aires")
 
-# ---------- App ----------
+
 app = Flask(__name__, static_folder="static", template_folder="templates")
-app.secret_key = SECRET_KEY
+app.config.update(
+    SECRET_KEY=SECRET_KEY or "dev-only-change-me",
+    SESSION_TYPE="filesystem",
+    SESSION_FILE_DIR=str(SESSION_DIR),
+    SESSION_PERMANENT=False,
+    SESSION_USE_SIGNER=True,
+)
+Session(app)
 
-# ---------- Palabras ----------
+
 def load_words(path: Path):
     if not path.exists():
         raise FileNotFoundError(
-            f"No se encontró {path}. Creá el archivo con una palabra de 5 letras por línea, en minúsculas."
+            f"No se encontro {path}. Crea el archivo con una palabra de 5 letras por linea."
         )
+
     words = []
     with path.open("r", encoding="utf-8") as f:
         for line in f:
-            w = line.strip().lower()
-            if len(w) == 5:
-                words.append(w)
+            word = line.strip().lower()
+            if len(word) == WORD_LEN and word.isalpha():
+                words.append(word)
+
     if not words:
-        raise ValueError("El archivo de palabras está vacío o no tiene palabras de 5 letras.")
-    return list(dict.fromkeys(words))  # dedup conservando orden
+        raise ValueError("El archivo de palabras esta vacio o no tiene palabras de 5 letras.")
+
+    return list(dict.fromkeys(words))
+
 
 ALL_WORDS = load_words(WORDS_PATH)
 ALL_WORDS_SET = set(ALL_WORDS)
-
-# ---------- Utils de juego ----------
 RANK = {"u": 0, "absent": 1, "present": 2, "correct": 3}
+KEYBOARD_LETTERS = "qwertyuiopasdfghjklñzxcvbnm"
 
-def new_game_state():
-    targets = random.sample(ALL_WORDS, k=NUM_WORDS)
-    keyboard = {ch: ["u", "u", "u", "u"] for ch in "qwertyuiopasdfghjklñzxcvbnm"}
+
+def today_key():
+    try:
+        tz = ZoneInfo(APP_TIMEZONE)
+    except ZoneInfoNotFoundError:
+        tz = timezone.utc
+    return datetime.now(tz).date().isoformat()
+
+
+def daily_seed(day_key: str):
+    digest = hashlib.sha256(f"quordle-espanol:{day_key}".encode("utf-8")).hexdigest()
+    return int(digest[:16], 16)
+
+
+def choose_targets(mode: str, day_key: str | None = None):
+    if mode == "daily":
+        rng = random.Random(daily_seed(day_key or today_key()))
+        return rng.sample(ALL_WORDS, k=NUM_WORDS)
+    return random.sample(ALL_WORDS, k=NUM_WORDS)
+
+
+def new_game_state(mode="practice"):
+    mode = mode if mode in MODES else "practice"
+    day_key = today_key() if mode == "daily" else None
+    keyboard = {ch: ["u"] * NUM_WORDS for ch in KEYBOARD_LETTERS}
+
     return {
-        "targets": targets,          # lista de 4 palabras
-        "attempt": 0,                # 0..9
-        "history": [],               # [{guess, evals: [ [s,s,s,s,s] *4 ]}]
-        "solved": [False, False, False, False],
-        "keyboard": keyboard,        # 'a' -> ['u','u','u','u']
+        "mode": mode,
+        "date": day_key,
+        "targets": choose_targets(mode, day_key),
+        "attempt": 0,
+        "history": [],
+        "solved": [False] * NUM_WORDS,
+        "keyboard": keyboard,
         "ended": False,
         "win": False,
-        "max_attempts": MAX_ATTEMPTS
+        "max_attempts": MAX_ATTEMPTS,
     }
 
+
+def get_requested_mode():
+    payload = request.get_json(silent=True) or {}
+    mode = payload.get("mode") or request.args.get("mode") or session.get("active_mode") or "practice"
+    return mode if mode in MODES else "practice"
+
+
+def get_game(mode: str):
+    games = session.setdefault("games", {})
+    game = games.get(mode)
+
+    if mode == "daily":
+        day_key = today_key()
+        if not game or game.get("date") != day_key:
+            game = new_game_state("daily")
+            games["daily"] = game
+            session.modified = True
+    elif not game:
+        game = new_game_state("practice")
+        games["practice"] = game
+        session.modified = True
+
+    session["active_mode"] = mode
+    return game
+
+
+def save_game(mode: str, game: dict):
+    games = session.setdefault("games", {})
+    games[mode] = game
+    session["active_mode"] = mode
+    session.modified = True
+
+
 def score_guess(secret: str, guess: str):
-    """
-    Devuelve lista de 5 estados: 'correct' (verde), 'present' (amarillo), 'absent' (gris)
-    Maneja letras repetidas correctamente.
-    """
-    n = len(secret)
-    result = ["absent"] * n
+    result = ["absent"] * WORD_LEN
     secret_counts = {}
 
-    # Marcar correctas y contar sobrantes
-    for i in range(n):
-        s = secret[i]
-        g = guess[i]
-        if s == g:
+    for i, secret_char in enumerate(secret):
+        guess_char = guess[i]
+        if secret_char == guess_char:
             result[i] = "correct"
         else:
-            secret_counts[s] = secret_counts.get(s, 0) + 1
+            secret_counts[secret_char] = secret_counts.get(secret_char, 0) + 1
 
-    # Marcar presentes si hay remanente
-    for i in range(n):
+    for i, guess_char in enumerate(guess):
         if result[i] == "correct":
             continue
-        g = guess[i]
-        if secret_counts.get(g, 0) > 0:
+        if secret_counts.get(guess_char, 0) > 0:
             result[i] = "present"
-            secret_counts[g] -= 1
-        else:
-            result[i] = "absent"
+            secret_counts[guess_char] -= 1
 
     return result
 
-def update_keyboard(keyboard: dict, guess: str, evals_by_board: list):
-    for b_idx in range(NUM_WORDS):
-        evals = evals_by_board[b_idx]
-        for i, st in enumerate(evals):
-            ch = guess[i]
-            if ch not in keyboard:
-                continue
-            if RANK[st] > RANK[keyboard[ch][b_idx]]:
-                keyboard[ch][b_idx] = st
 
-def public_state(state, include_answers=False):
+def update_keyboard(keyboard: dict, guess: str, evals_by_board: list):
+    for board_idx, evals in enumerate(evals_by_board):
+        for char_idx, status in enumerate(evals):
+            char = guess[char_idx]
+            if char in keyboard and RANK[status] > RANK[keyboard[char][board_idx]]:
+                keyboard[char][board_idx] = status
+
+
+def public_state(game, include_answers=False):
     data = {
-        "attempt": state["attempt"],
-        "history": state["history"],
-        "solved": state["solved"],
-        "keyboard": state["keyboard"],
-        "ended": state["ended"],
-        "win": state["win"],
-        "max_attempts": state["max_attempts"]
+        "mode": game["mode"],
+        "date": game["date"],
+        "attempt": game["attempt"],
+        "history": game["history"],
+        "solved": game["solved"],
+        "keyboard": game["keyboard"],
+        "ended": game["ended"],
+        "win": game["win"],
+        "max_attempts": game["max_attempts"],
     }
-    if include_answers and state["ended"]:
-        data["answers"] = state["targets"]
+    if include_answers and game["ended"]:
+        data["answers"] = game["targets"]
     return data
 
-# ---------- Rutas ----------
+
 @app.route("/")
 def index():
-    if "game" not in session:
-        session["game"] = new_game_state()
-        session.modified = True
+    get_game(session.get("active_mode") or "practice")
     return render_template("index.html")
+
 
 @app.post("/api/new")
 def api_new():
-    session["game"] = new_game_state()
-    session.modified = True
-    return jsonify({"ok": True, "state": public_state(session["game"])})
+    mode = get_requested_mode()
+    game = new_game_state(mode)
+    save_game(mode, game)
+    return jsonify({"ok": True, "state": public_state(game)})
+
 
 @app.get("/api/state")
 def api_state():
-    if "game" not in session:
-        session["game"] = new_game_state()
-    st = session["game"]
-    return jsonify({"ok": True, "state": public_state(st, include_answers=True)})
+    mode = get_requested_mode()
+    game = get_game(mode)
+    return jsonify({"ok": True, "state": public_state(game, include_answers=True)})
+
 
 @app.post("/api/guess")
 def api_guess():
-    if "game" not in session:
-        session["game"] = new_game_state()
+    mode = get_requested_mode()
+    game = get_game(mode)
 
-    st = session["game"]
-
-    # Si la partida ya terminó, devolvés estado + respuestas
-    if st["ended"]:
-        return jsonify({"ok": True, "state": public_state(st, include_answers=True), "answers": st["targets"]})
+    if game["ended"]:
+        return jsonify({"ok": True, "state": public_state(game, include_answers=True)})
 
     data = request.get_json(silent=True) or {}
     guess = (data.get("word") or "").strip().lower()
 
-    if len(guess) != 5:
+    if len(guess) != WORD_LEN:
         return jsonify({"ok": False, "error": "La palabra debe tener 5 letras"}), 400
     if guess not in ALL_WORDS_SET:
-        return jsonify({"ok": False, "error": "Esa palabra no está en la lista"}), 400
+        return jsonify({"ok": False, "error": "Esa palabra no esta en la lista"}), 400
 
-    # Evaluar contra las 4 palabras
-    evals_by_board = [score_guess(target, guess) for target in st["targets"]]
+    evals_by_board = [score_guess(target, guess) for target in game["targets"]]
 
-    # Actualizar resolved
-    for b_idx, target in enumerate(st["targets"]):
+    for board_idx, target in enumerate(game["targets"]):
         if guess == target:
-            st["solved"][b_idx] = True
+            game["solved"][board_idx] = True
 
-    # Guardar intento
-    st["history"].append({"guess": guess, "evals": evals_by_board})
-    st["attempt"] += 1
+    game["history"].append({"guess": guess, "evals": evals_by_board})
+    game["attempt"] += 1
+    update_keyboard(game["keyboard"], guess, evals_by_board)
+    game["win"] = all(game["solved"])
+    game["ended"] = game["win"] or game["attempt"] >= game["max_attempts"]
 
-    # Actualizar teclado
-    update_keyboard(st["keyboard"], guess, evals_by_board)
+    save_game(mode, game)
+    return jsonify({"ok": True, "state": public_state(game, include_answers=game["ended"])})
 
-    # ¿Ganó o terminó?
-    st["win"] = all(st["solved"])
-    st["ended"] = st["win"] or (st["attempt"] >= st["max_attempts"])
 
-    session["game"] = st
-    session.modified = True
-
-    # Si terminó (ganó o perdió), devolvemos respuestas también
-    if st["ended"]:
-        return jsonify({"ok": True, "state": public_state(st, include_answers=True), "answers": st["targets"]})
-
-    return jsonify({"ok": True, "state": public_state(st)})
-
-# ---------- Runner ----------
 if __name__ == "__main__":
-    # En local, correr con:
-    #   flask --app app run --debug
-    # o   python app.py
     app.run(debug=True)

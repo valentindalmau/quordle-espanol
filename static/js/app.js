@@ -1,12 +1,14 @@
 const BOARD_COUNT = 4
 const WORD_LEN = 5
-const rows = 9
+const ROWS = 9
+const STORAGE_MODE_KEY = 'quordle-es-mode'
 
 let state = null
 let currentGuess = ''
+let activeMode = localStorage.getItem(STORAGE_MODE_KEY) || 'practice'
+let submitting = false
 
-const qs = s => document.querySelector(s)
-const qsa = s => Array.from(document.querySelectorAll(s))
+const qs = selector => document.querySelector(selector)
 
 const KEY_LAYOUT = [
     ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
@@ -14,13 +16,15 @@ const KEY_LAYOUT = [
     ['enter', 'z', 'x', 'c', 'v', 'b', 'n', 'm', 'backspace']
 ]
 
-const STATUS_CLASS = st => st === 'correct' ? 'correct' : st === 'present' ? 'present' : st === 'absent' ? 'absent' : ''
+function statusClass(status) {
+    return status === 'correct' || status === 'present' || status === 'absent' ? status : ''
+}
 
-function showToast(msg) {
-    const el = qs('#toast')
-    el.textContent = msg
-    el.classList.add('show')
-    setTimeout(() => el.classList.remove('show'), 1600)
+function showToast(message) {
+    const toast = qs('#toast')
+    toast.textContent = message
+    toast.classList.add('show')
+    setTimeout(() => toast.classList.remove('show'), 1600)
 }
 
 function showOverlay(title, text) {
@@ -28,21 +32,27 @@ function showOverlay(title, text) {
     qs('#overlay-text').textContent = text
     qs('#overlay').classList.remove('hidden')
 }
+
 function hideOverlay() {
     qs('#overlay').classList.add('hidden')
 }
 
+function tileAt(board, row, col) {
+    const grid = document.querySelector(`.grid[data-grid="${board}"]`)
+    if (!grid) return null
+    return grid.children[row * WORD_LEN + col] || null
+}
+
 function emptyGrid() {
-    for (let b = 0; b < BOARD_COUNT; b++) {
-        const grid = document.querySelector(`.grid[data-grid="${b}"]`)
+    for (let board = 0; board < BOARD_COUNT; board++) {
+        const grid = document.querySelector(`.grid[data-grid="${board}"]`)
         grid.innerHTML = ''
-        for (let r = 0; r < rows; r++) {
-            for (let c = 0; c < WORD_LEN; c++) {
-                const d = document.createElement('div')
-                d.className = 'tile'
-                d.dataset.row = r
-                d.dataset.col = c
-                grid.appendChild(d)
+
+        for (let row = 0; row < ROWS; row++) {
+            for (let col = 0; col < WORD_LEN; col++) {
+                const tile = document.createElement('div')
+                tile.className = 'tile'
+                grid.appendChild(tile)
             }
         }
     }
@@ -50,41 +60,36 @@ function emptyGrid() {
 
 function fillHistory() {
     if (!state || !state.history) return
-    state.history.forEach((h, rIdx) => {
-        const guess = h.guess.toUpperCase()
-        for (let b = 0; b < BOARD_COUNT; b++) {
-            const evals = h.evals[b]
-            for (let c = 0; c < WORD_LEN; c++) {
-                const tile = tileAt(b, rIdx, c)
-                tile.textContent = guess[c]
-                const cl = STATUS_CLASS(evals[c])
-                if (cl) tile.classList.add(cl)
+
+    state.history.forEach((entry, rowIdx) => {
+        const guess = entry.guess.toUpperCase()
+
+        for (let board = 0; board < BOARD_COUNT; board++) {
+            const evals = entry.evals[board]
+
+            for (let col = 0; col < WORD_LEN; col++) {
+                const tile = tileAt(board, rowIdx, col)
+                if (!tile) continue
+
+                tile.textContent = guess[col]
+                tile.className = `tile ${statusClass(evals[col])}`.trim()
             }
         }
     })
 }
 
-function tileAt(board, row, col) {
-    const grid = document.querySelector(`.grid[data-grid="${board}"]`)
-    if (!grid) return null
-    const idx = row * WORD_LEN + col
-    return grid.children[idx] || null
-}
-
 function drawCurrentGuess() {
-    if (!state) return
-    const attempt = state.attempt || 0
+    if (!state || state.ended || state.attempt >= ROWS) return
 
-    // ⛔ No intentes dibujar si el juego terminó o si la fila no existe
-    if (state.ended || attempt >= rows) return
+    for (let col = 0; col < WORD_LEN; col++) {
+        const char = currentGuess[col] ? currentGuess[col].toUpperCase() : ''
 
-    for (let c = 0; c < WORD_LEN; c++) {
-        const ch = currentGuess[c] ? currentGuess[c].toUpperCase() : ''
-        for (let b = 0; b < BOARD_COUNT; b++) {
-            const tile = tileAt(b, attempt, c)
+        for (let board = 0; board < BOARD_COUNT; board++) {
+            const tile = tileAt(board, state.attempt, col)
             if (!tile) continue
-            tile.textContent = ch
-            tile.classList.toggle('filled', !!ch)
+
+            tile.textContent = char
+            tile.classList.toggle('filled', Boolean(char))
         }
     }
 }
@@ -92,62 +97,89 @@ function drawCurrentGuess() {
 function buildKeyboard() {
     const root = qs('#keyboard')
     root.innerHTML = ''
+
     KEY_LAYOUT.forEach(row => {
         const rowEl = document.createElement('div')
         rowEl.className = 'kb-row'
-        row.forEach(k => rowEl.appendChild(makeKey(k)))
+        row.forEach(key => rowEl.appendChild(makeKey(key)))
         root.appendChild(rowEl)
     })
 }
 
-function makeKey(k) {
-    const btn = document.createElement('button')
-    btn.className = 'key' + ((k === 'enter' || k === 'backspace') ? ' wide' : '')
-    btn.dataset.key = k
+function makeKey(key) {
+    const button = document.createElement('button')
+    button.className = 'key' + (key === 'enter' || key === 'backspace' ? ' wide' : '')
+    button.dataset.key = key
+    button.type = 'button'
+    button.setAttribute('aria-label', key === 'backspace' ? 'Borrar' : key)
 
     const label = document.createElement('div')
     label.className = 'key-label'
-    label.textContent = k === 'enter' ? 'ENTER' : k === 'backspace' ? 'BORRAR' : k.toUpperCase()
+    label.textContent = key === 'enter' ? 'ENTER' : key === 'backspace' ? 'BORRAR' : key.toUpperCase()
 
     const quarters = document.createElement('div')
     quarters.className = 'key-quarters'
-    for (let i = 0; i < 4; i++) {
-        const q = document.createElement('div')
-        q.className = 'q'
-        q.dataset.slot = i
-        quarters.appendChild(q)
+
+    for (let slot = 0; slot < BOARD_COUNT; slot++) {
+        const quarter = document.createElement('div')
+        quarter.className = 'q'
+        quarters.appendChild(quarter)
     }
 
-    btn.appendChild(label)
-    btn.appendChild(quarters)
-    btn.addEventListener('click', () => onKey(k))
-    return btn
+    button.appendChild(label)
+    button.appendChild(quarters)
+    button.addEventListener('click', () => onKey(key))
+    return button
 }
 
 function paintKeyboard() {
     if (!state) return
-    Object.entries(state.keyboard).forEach(([ch, slots]) => {
-        const btn = document.querySelector(`.key[data-key="${ch}"]`)
-        if (!btn) return
-        const blocks = btn.querySelectorAll('.q')
-        slots.forEach((st, i) => {
-            const el = blocks[i]
-            el.classList.remove('absent', 'present', 'correct')
-            if (st !== 'u') el.classList.add(st)
+
+    Object.entries(state.keyboard).forEach(([char, slots]) => {
+        const button = document.querySelector(`.key[data-key="${char}"]`)
+        if (!button) return
+
+        button.querySelectorAll('.q').forEach((quarter, idx) => {
+            quarter.classList.remove('absent', 'present', 'correct')
+            if (slots[idx] && slots[idx] !== 'u') {
+                quarter.classList.add(slots[idx])
+            }
         })
     })
 }
 
 function setAttemptIndicator() {
     if (!state) return
-    const el = qs('#attempt-indicator')
-    el.textContent = `${Math.min(state.attempt + 1, state.max_attempts)} / ${state.max_attempts}`
+    qs('#attempt-indicator').textContent = `${Math.min(state.attempt + 1, state.max_attempts)} / ${state.max_attempts}`
 }
 
-function onKey(k) {
-    if (!state || state.ended) return
+function setModeUi() {
+    document.querySelectorAll('.mode-btn').forEach(button => {
+        button.classList.toggle('active', button.dataset.mode === activeMode)
+    })
 
-    if (k === 'enter') {
+    const modeLabel = activeMode === 'daily' ? 'Diario' : 'Practica'
+    const dateLabel = state && state.mode === 'daily' && state.date ? ` ${state.date}` : ''
+    qs('#mode-label').textContent = `${modeLabel}${dateLabel}`
+    qs('#btn-new').textContent = activeMode === 'daily' ? 'Reiniciar' : 'Nuevo'
+}
+
+function resetBoardFromState() {
+    emptyGrid()
+    fillHistory()
+    setAttemptIndicator()
+    paintKeyboard()
+    setModeUi()
+    currentGuess = ''
+
+    if (!state.ended) drawCurrentGuess()
+    maybeEndOverlay()
+}
+
+function onKey(key) {
+    if (!state || state.ended || submitting) return
+
+    if (key === 'enter') {
         if (currentGuess.length !== WORD_LEN) {
             showToast('La palabra debe tener 5 letras')
             return
@@ -156,188 +188,141 @@ function onKey(k) {
         return
     }
 
-    if (k === 'backspace') {
+    if (key === 'backspace') {
         currentGuess = currentGuess.slice(0, -1)
         drawCurrentGuess()
         return
     }
 
-    if (k.length === 1) {
-        const ch = k.toLowerCase()
-        if (currentGuess.length < WORD_LEN) {
-            currentGuess += ch
-            drawCurrentGuess()
-        }
+    if (key.length === 1 && currentGuess.length < WORD_LEN) {
+        currentGuess += key.toLowerCase()
+        drawCurrentGuess()
     }
 }
 
-function onPhysicalKey(e) {
-    const active = document.activeElement
-    const k = e.key.toLowerCase()
+function onPhysicalKey(event) {
+    const key = event.key.toLowerCase()
 
-    // 🔧 si el foco está en un botón (ej. "Nuevo juego"), no dejes que ENTER lo dispare
-    if (active && active.tagName === 'BUTTON' && (k === 'enter')) {
-        e.preventDefault()
-    }
-
-    if (k === 'enter' || k === 'backspace') {
-        e.preventDefault()   // 🔧 evitá comportamiento por defecto del navegador
-        onKey(k)
+    if (key === 'enter' || key === 'backspace') {
+        event.preventDefault()
+        onKey(key)
         return
     }
 
-    if (/^[a-zñ]$/.test(k)) {
-        // opcional: e.preventDefault() para que no haga nada raro el navegador
-        onKey(k)
+    if (/^[a-zñ]$/.test(key)) {
+        event.preventDefault()
+        onKey(key)
     }
 }
 
 async function fetchJSON(url, opts) {
     try {
-        const res = await fetch(
-            url,
-            Object.assign(
-                {
-                    method: 'GET',
-                    headers: { 'Content-Type': 'application/json' },
-                    credentials: 'same-origin'  // manda cookie de sesión
-                },
-                opts || {}
-            )
-        )
+        const res = await fetch(url, Object.assign({
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin'
+        }, opts || {}))
+
         const text = await res.text()
         let data = {}
-        try { data = text ? JSON.parse(text) : {} } catch { data = { ok: false, error: 'Respuesta no válida del servidor' } }
+
+        try {
+            data = text ? JSON.parse(text) : {}
+        } catch {
+            data = { ok: false, error: 'Respuesta no valida del servidor' }
+        }
+
+        if (!res.ok && data.ok !== false) {
+            data = { ok: false, error: 'Error del servidor' }
+        }
+
         return data
-    } catch (e) {
+    } catch {
         return { ok: false, error: 'No se pudo conectar con el servidor' }
     }
 }
 
 async function loadState() {
-    const data = await fetchJSON('/api/state')
+    const data = await fetchJSON(`/api/state?mode=${encodeURIComponent(activeMode)}`)
+
     if (!data.ok) {
         showToast(data.error || 'No se pudo cargar el estado')
         return
     }
+
     state = data.state
-    emptyGrid()
-    fillHistory()
-    setAttemptIndicator()
-    paintKeyboard()
-    currentGuess = ''
-
-    // ✅ No intentes dibujar la fila “actual” si ya terminó
-    if (!state.ended) drawCurrentGuess()
-
-    maybeEndOverlay()
+    resetBoardFromState()
 }
 
 async function newGame() {
     hideOverlay()
+    qs('#btn-new').blur()
 
-    // 🔧 quitar foco del botón para que ENTER no lo dispare de nuevo
-    const btn = document.getElementById('btn-new')
-    if (btn) btn.blur()
+    const data = await fetchJSON('/api/new', {
+        method: 'POST',
+        body: JSON.stringify({ mode: activeMode })
+    })
 
-    const data = await fetchJSON('/api/new', { method: 'POST' })
     if (!data.ok) {
         showToast(data.error || 'No se pudo crear un nuevo juego')
         return
     }
 
     state = data.state
-    emptyGrid()
-    currentGuess = ''
-    setAttemptIndicator()
-
-    document.querySelectorAll('.key .q').forEach(q => {
-        q.classList.remove('absent', 'present', 'correct')
-    })
-
-    paintKeyboard()
-    drawCurrentGuess()
+    resetBoardFromState()
 }
 
-
 async function submitGuess(word) {
+    submitting = true
+
     const data = await fetchJSON('/api/guess', {
         method: 'POST',
-        body: JSON.stringify({ word })
+        body: JSON.stringify({ word, mode: activeMode })
     })
+
+    submitting = false
 
     if (!data.ok) {
         showToast(data.error || 'No se pudo enviar')
-        return  // no vaciamos currentGuess en error
+        return
     }
 
     state = data.state
-
-    // pintar la última fila confirmada por backend
-    const rIdx = state.history.length - 1
-    if (rIdx >= 0) {
-        const guessUp = state.history[rIdx].guess.toUpperCase()
-        for (let b = 0; b < BOARD_COUNT; b++) {
-            const evals = state.history[rIdx].evals[b]
-            for (let c = 0; c < WORD_LEN; c++) {
-                const tile = tileAt(b, rIdx, c)
-                tile.textContent = guessUp[c]
-                tile.classList.remove('filled')
-                const cl = STATUS_CLASS(evals[c])
-                if (cl) tile.classList.add(cl)
-            }
-        }
-    }
-
-    paintKeyboard()
-    setAttemptIndicator()
-    currentGuess = ''
-
-    // ✅ Sólo dibujá la fila de tipeo si NO terminó
-    if (!state.ended) drawCurrentGuess()
-
-    if (state.ended) {
-        ensureAnswersThenOverlay()
-    }
+    resetBoardFromState()
 }
 
 function maybeEndOverlay() {
     if (!state || !state.ended) return
-    ensureAnswersThenOverlay()
+
+    const answers = Array.isArray(state.answers) ? state.answers : []
+    const title = state.win ? 'Ganaste' : 'Perdiste'
+    const text = answers.length ? `Las palabras eran: ${answers.map(word => word.toUpperCase()).join(' - ')}` : ''
+    showOverlay(title, text)
 }
 
-async function ensureAnswersThenOverlay() {
-    // Si ya tengo answers, muestro y salgo
-    console.log(state.answers)
-    if (state && Array.isArray(state.answers) && state.answers.length === 4) {
-        const title = state.win ? '¡Ganaste!' : 'Perdiste'
-        const txt = `Las palabras eran: ${state.answers.map(w => w.toUpperCase()).join(' • ')}`
-        showOverlay(title, txt)
-        return
-    }
+function switchMode(mode) {
+    if (mode === activeMode) return
 
-    // Si no tengo answers pero el juego terminó, pido /api/state (trae answers)
-    if (state && state.ended) {
-        const data = await fetchJSON('/api/state')
-        if (data.ok && data.state) {
-            state = data.state
-            const answers = Array.isArray(state.answers) ? state.answers : []
-            const title = state.win ? '¡Ganaste!' : 'Perdiste'
-            const txt = answers.length ? `Las palabras eran: ${answers.map(w => w.toUpperCase()).join(' • ')}` : ''
-            showOverlay(title, txt)
-        } else {
-            // fallback: al menos mostrar “Perdiste”
-            showOverlay('Perdiste', '')
-        }
-    }
+    activeMode = mode
+    localStorage.setItem(STORAGE_MODE_KEY, activeMode)
+    hideOverlay()
+    setModeUi()
+    loadState()
 }
-
 
 function init() {
     buildKeyboard()
+    emptyGrid()
+    setModeUi()
+
     document.addEventListener('keydown', onPhysicalKey)
     qs('#btn-new').addEventListener('click', newGame)
     qs('#overlay-close').addEventListener('click', hideOverlay)
+
+    document.querySelectorAll('.mode-btn').forEach(button => {
+        button.addEventListener('click', () => switchMode(button.dataset.mode))
+    })
+
     loadState()
 }
 
