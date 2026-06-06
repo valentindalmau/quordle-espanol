@@ -332,7 +332,7 @@ body {
 
 @media (max-width: 760px) {
     :root {
-        --tile-size: min(25px, calc((100vw - 38px) / 10), calc((100svh - 255px) / 18));
+        --tile-size: min(23px, calc((100vw - 38px) / 10), calc((100svh - 300px) / 18));
         --tile-gap: 2px;
     }
 
@@ -347,7 +347,7 @@ body {
     .page {
         width: 100%;
         min-height: 100svh;
-        padding: max(8px, env(safe-area-inset-top)) max(6px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(6px, env(safe-area-inset-left));
+        padding: max(8px, env(safe-area-inset-top)) max(6px, env(safe-area-inset-right)) max(78px, env(safe-area-inset-bottom)) max(6px, env(safe-area-inset-left));
         grid-template-rows: auto auto auto;
         gap: 7px;
         overflow: visible;
@@ -478,7 +478,7 @@ body {
     .key {
         width: 100%;
         min-width: 0;
-        height: clamp(42px, 6.1svh, 50px);
+        height: clamp(38px, 5.5svh, 46px);
         border-radius: 8px;
     }
 
@@ -495,7 +495,7 @@ body {
         right: 5px;
         bottom: 6px;
         left: 5px;
-        height: clamp(17px, 3svh, 21px);
+        height: clamp(15px, 2.6svh, 19px);
     }
 
     .toast {
@@ -532,7 +532,7 @@ body {
 
 @media (max-width: 380px) {
     :root {
-        --tile-size: min(23px, calc((100vw - 34px) / 10), calc((100svh - 240px) / 18));
+        --tile-size: min(22px, calc((100vw - 34px) / 10), calc((100svh - 285px) / 18));
     }
 
     .page {
@@ -567,7 +567,7 @@ body {
     }
 
     .key {
-        height: clamp(40px, 6svh, 46px);
+        height: clamp(36px, 5.4svh, 43px);
     }
 
     .key-label {
@@ -582,7 +582,7 @@ body {
 
 @media (max-width: 760px) and (max-height: 640px) {
     :root {
-        --tile-size: min(22px, calc((100vw - 34px) / 10), calc((100svh - 220px) / 18));
+        --tile-size: min(20px, calc((100vw - 34px) / 10), calc((100svh - 260px) / 18));
     }
 
     .topbar {
@@ -608,7 +608,7 @@ body {
     }
 
     .key {
-        height: 38px;
+        height: 34px;
     }
 
     .key-label {
@@ -617,6 +617,6 @@ body {
 
     .key-quarters {
         bottom: 5px;
-        height: 16px;
+        height: 14px;
     }
 }
